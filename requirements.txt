@@ -1,0 +1,6 @@
+statsbombpy
+pandas
+numpy
+tqdm
+matplotlib
+pyarrow
