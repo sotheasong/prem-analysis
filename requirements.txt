@@ -4,3 +4,5 @@ numpy
 tqdm
 matplotlib
 pyarrow
+dill
+duckdb
