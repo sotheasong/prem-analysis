@@ -8,7 +8,7 @@ from statsbombpy import public, sb
 from tqdm import tqdm
 
 from src.config import PROCESSED_DIR, RAW_DIR
-from src.events_format import is_normalized, normalize_events_df
+from src.extraction.events_format import is_normalized, normalize_events_df
 
 
 def get_epl_matches() -> pd.DataFrame:

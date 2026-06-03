@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.progression import (
+from src.analysis.possession import (
     _possession_stats,
     _possession_stats_outcome,
     _possession_stats_base,
