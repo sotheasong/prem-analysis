@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from mplsoccer import Pitch
 
-from src.analysis.metrics import ERA_A, ERA_B, parse_pitch_x
+from src.analysis.metrics import ERA_2004, ERA_2016, parse_pitch_x
 
 # StatsBomb open-data pitch (meters)
 PITCH_LENGTH = 120
@@ -83,32 +85,43 @@ def add_pitch_coords(df: pd.DataFrame) -> pd.DataFrame:
 
 def plot_pass_length_histograms(
     events: pd.DataFrame,
-    seasons: tuple[str, str] = (ERA_A, ERA_B),
+    seasons: tuple[str, str] | None = (ERA_2004, ERA_2016),
     *,
+    teams: list[str] | None = None,
+    play_pattern: str | None = None,
     bins: int = 50,
     sample_per_season: int | None = 100_000,
     ax=None,
 ):
     passes = events[events["type"] == "Pass"].dropna(subset=["pass_length"])
+    if play_pattern is not None:
+        passes = passes[passes["play_pattern"] == play_pattern]
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 4))
 
-    for season in seasons:
-        s = passes[passes["season"] == season]["pass_length"]
-        if sample_per_season and len(s) > sample_per_season:
-            s = s.sample(sample_per_season, random_state=0)
-        ax.hist(s, bins=bins, alpha=0.5, density=True, label=season)
+    if teams is not None:
+        for team in teams:
+            s = passes[passes["team"] == team]["pass_length"]
+            ax.hist(s, bins=bins, alpha=0.5, density=True, label=team)
+        title = "Pass length distribution by team"
+    else:
+        for season in seasons or []:
+            s = passes[passes["season"] == season]["pass_length"]
+            if sample_per_season and len(s) > sample_per_season:
+                s = s.sample(sample_per_season, random_state=0)
+            ax.hist(s, bins=bins, alpha=0.5, density=True, label=season)
+        title = "Pass length distribution by season"
 
     ax.set_xlabel("Pass length (m)")
     ax.set_ylabel("Density")
-    ax.set_title("Pass length distribution by season")
+    ax.set_title(title)
     ax.legend()
     return ax
 
 
 def plot_possession_duration_histograms(
     possession_chains: pd.DataFrame,
-    seasons: tuple[str, str] = (ERA_A, ERA_B),
+    seasons: tuple[str, str] = (ERA_2004, ERA_2016),
     *,
     bins: int = 50,
     max_sec: float = 60,
@@ -226,6 +239,267 @@ def plot_pressure_directness_scatter(possession_summary: pd.DataFrame, *, ax=Non
     ax.set_ylabel("Directness ratio")
     ax.set_title("Pressure vs Directness")
     ax.legend()
+    return ax
+
+
+def plot_team_metric_comparison(
+    comparison: pd.DataFrame,
+    metric: str,
+    *,
+    scenario: str | None = None,
+    ax=None,
+    ylabel: str | None = None,
+):
+    """Grouped bar chart for one metric across teams and optional scenario filter."""
+    data = comparison.copy()
+    if scenario is not None:
+        data = data[data["scenario"] == scenario]
+    if ax is None:
+        _, ax = plt.subplots(figsize=(6, 4))
+
+    teams = data["team"].tolist()
+    values = data[metric].tolist()
+    colors = _team_color_map(teams)
+    ax.bar(teams, values, color=[colors[t] for t in teams], alpha=0.85)
+    ax.set_ylabel(ylabel or metric.replace("_", " "))
+    title = metric.replace("_", " ")
+    if scenario:
+        title = f"{title} — {scenario}"
+    ax.set_title(title)
+    return ax
+
+
+def plot_pass_height_comparison(
+    events: pd.DataFrame,
+    teams: list[str],
+    *,
+    ax=None,
+):
+    """Stacked bar chart of pass height mix by team."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    passes = events[events["type"] == "Pass"].copy()
+    passes = passes[passes["team"].isin(teams)]
+    mix = (
+        passes.groupby("team")["pass_height"]
+        .value_counts(normalize=True)
+        .unstack(fill_value=0)
+        * 100
+    )
+    order = ["Ground Pass", "Low Pass", "High Pass"]
+    mix = mix.reindex(columns=[c for c in order if c in mix.columns], fill_value=0)
+    mix.plot(kind="bar", stacked=True, ax=ax, colormap="viridis", alpha=0.9)
+    ax.set_ylabel("Share of passes (%)")
+    ax.set_xlabel("Team")
+    ax.set_title("Pass height mix")
+    ax.legend(title="Height", bbox_to_anchor=(1.02, 1), loc="upper left")
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
+    return ax
+
+
+def plot_pass_count_distribution(
+    possession_summary: pd.DataFrame,
+    teams: list[str],
+    *,
+    play_pattern: str = "Regular Play",
+    ax=None,
+):
+    """Side-by-side pass-count bins for regular-play possessions."""
+    from src.analysis.possession.compare import pass_count_distribution
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 4))
+
+    width = 0.35
+    x = np.arange(6)
+    labels = ["0", "1", "2", "3-4", "5-7", "8+"]
+    colors = _team_color_map(teams)
+
+    for i, team in enumerate(teams):
+        dist = pass_count_distribution(
+            possession_summary, team, play_pattern=play_pattern
+        )
+        counts = dist.reindex(labels, fill_value=0)
+        total = counts.sum() or 1
+        pct = counts / total * 100
+        offset = (i - (len(teams) - 1) / 2) * width
+        ax.bar(
+            x + offset,
+            pct,
+            width=width,
+            label=team,
+            color=colors.get(team),
+            alpha=0.85,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_xlabel("Passes per possession")
+    ax.set_ylabel("Share of regular-play possessions (%)")
+    ax.set_title(f"Pass-count distribution — {play_pattern}")
+    ax.legend()
+    return ax
+
+
+def plot_pass_angle_rose(
+    events: pd.DataFrame,
+    teams: list[str],
+    *,
+    play_pattern: str = "Regular Play",
+    bins: int = 16,
+):
+    """Polar histograms of pass-angle distributions by team."""
+    fig, axes = plt.subplots(
+        1,
+        len(teams),
+        subplot_kw={"projection": "polar"},
+        figsize=(5 * len(teams), 4),
+    )
+    axes = np.atleast_1d(axes)
+    colors = _team_color_map(teams)
+
+    for ax, team in zip(axes, teams):
+        passes = events[
+            events["type"].eq("Pass")
+            & events["team"].eq(team)
+            & events["play_pattern"].eq(play_pattern)
+        ].dropna(subset=["pass_angle"])
+        angles = np.mod(passes["pass_angle"].astype(float), 2 * np.pi)
+        counts, edges = np.histogram(angles, bins=bins, range=(0, 2 * np.pi))
+        widths = np.diff(edges)
+        ax.bar(
+            edges[:-1],
+            counts,
+            width=widths,
+            align="edge",
+            alpha=0.75,
+            color=colors.get(team),
+            edgecolor="white",
+            linewidth=0.5,
+        )
+        ax.set_theta_zero_location("E")
+        ax.set_theta_direction(1)
+        ax.set_title(f"{team} pass angles")
+
+    fig.suptitle(f"Pass direction distribution — {play_pattern}", y=1.05)
+    return fig, axes
+
+
+def plot_pass_network_heatmap(
+    events: pd.DataFrame,
+    team: str,
+    *,
+    play_pattern: str = "Regular Play",
+    ax=None,
+):
+    """Weighted player-to-player pass matrix for completed passes."""
+    from src.analysis.passing.passing import filter_regular_play_passes, pass_network_adjacency
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 6))
+
+    passes = filter_regular_play_passes(events, team)
+    if play_pattern != "Regular Play":
+        passes = events[
+            events["type"].eq("Pass")
+            & events["team"].eq(team)
+            & events["play_pattern"].eq(play_pattern)
+        ].copy()
+    matrix = pass_network_adjacency(passes, team)
+    if matrix.empty:
+        ax.set_title(f"No completed pass network — {team}")
+        return ax
+
+    im = ax.imshow(matrix.values, cmap="viridis")
+    ax.set_xticks(range(len(matrix.columns)))
+    ax.set_yticks(range(len(matrix.index)))
+    ax.set_xticklabels([str(p)[:14] for p in matrix.columns], rotation=90, fontsize=8)
+    ax.set_yticklabels([str(p)[:14] for p in matrix.index], fontsize=8)
+    ax.set_title(f"Completed pass network — {team}")
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Passes")
+    return ax
+
+
+def plot_first_pass_direction(
+    first_pass_table: pd.DataFrame,
+    *,
+    ax=None,
+):
+    """Stacked first-pass direction chart."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    pivot = first_pass_table.pivot_table(
+        index="team", columns="direction", values="pct", fill_value=0
+    )
+    order = [col for col in ["forward", "lateral", "backward"] if col in pivot.columns]
+    pivot[order].plot(kind="bar", stacked=True, ax=ax, colormap="viridis", alpha=0.9)
+    ax.set_xlabel("Team")
+    ax.set_ylabel("First passes (%)")
+    ax.set_title("First pass behavior — Regular Play possessions")
+    ax.legend(title="Direction", bbox_to_anchor=(1.02, 1), loc="upper left")
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
+    return ax
+
+
+def plot_pressure_progression_split(
+    passing_style: pd.DataFrame,
+    *,
+    metric: str = "completion",
+    ax=None,
+):
+    """Compare pressured vs unpressured completion or x-progression."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    if metric == "completion":
+        cols = ["pressured_completion_pct", "unpressured_completion_pct"]
+        labels = ["Pressured", "Unpressured"]
+        ylabel = "Completion (%)"
+        title = "Passing stability under pressure"
+    else:
+        cols = ["pressured_mean_dx", "unpressured_mean_dx"]
+        labels = ["Pressured", "Unpressured"]
+        ylabel = "Mean pass x-progression"
+        title = "Pass progression under pressure"
+
+    x = np.arange(len(passing_style))
+    width = 0.35
+    for i, (col, label) in enumerate(zip(cols, labels)):
+        ax.bar(x + (i - 0.5) * width, passing_style[col], width, label=label, alpha=0.85)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(passing_style["team"])
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend()
+    return ax
+
+
+def plot_pass_vs_carry_progression(
+    passing_style: pd.DataFrame,
+    *,
+    ax=None,
+):
+    """Stacked contribution of passes and carries to positive x progression."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    plot_data = passing_style.set_index("team")[
+        ["pass_progression_share_pct", "carry_progression_share_pct"]
+    ].rename(
+        columns={
+            "pass_progression_share_pct": "Passes",
+            "carry_progression_share_pct": "Carries",
+        }
+    )
+    plot_data.plot(kind="bar", stacked=True, ax=ax, colormap="viridis", alpha=0.9)
+    ax.set_xlabel("Team")
+    ax.set_ylabel("Positive x-progression share (%)")
+    ax.set_title("Progression mechanism — passes vs carries")
+    ax.legend(title="")
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
     return ax
 
 
@@ -395,7 +669,7 @@ def plot_possession_start_end_heatmaps(
 
 def plot_team_spatial_heatmap(
     events: pd.DataFrame,
-    seasons: tuple[str, str] = (ERA_A, ERA_B),
+    seasons: tuple[str, str] = (ERA_2004, ERA_2016),
     *,
     sample_per_season: int = 80_000,
     gridsize: int = 30,
@@ -478,7 +752,7 @@ def build_match_tempo(events: pd.DataFrame) -> pd.DataFrame:
 
 def plot_match_tempo_timeseries(
     tempo: pd.DataFrame,
-    seasons: tuple[str, str] = (ERA_A, ERA_B),
+    seasons: tuple[str, str] = (ERA_2004, ERA_2016),
     *,
     ax=None,
 ):

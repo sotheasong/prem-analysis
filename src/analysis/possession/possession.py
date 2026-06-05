@@ -402,3 +402,17 @@ def _parse_bool(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"true", "1", "yes"}
     return bool(value)
+
+
+MERGE_COLS = ["match_id", "period", "possession_id", "possession_team"]
+
+
+def build_possession_summary(events_df: pd.DataFrame) -> pd.DataFrame:
+    """Merge possession-chain tables into one match-level summary."""
+    base = add_possession_opponent(_possession_stats_base(events_df), events_df)
+    return (
+        base.merge(_possession_stats_time(events_df), on=MERGE_COLS, how="left")
+        .merge(_possession_stats_progression(events_df), on=MERGE_COLS, how="left")
+        .merge(_possession_stats_pressure(events_df), on=MERGE_COLS, how="left")
+        .merge(_possession_stats_outcome(events_df), on=MERGE_COLS, how="left")
+    )

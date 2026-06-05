@@ -5,24 +5,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.analysis.possession import (
+from src.analysis.possession.possession import (
     _possession_stats,
-    _possession_stats_outcome,
-    _possession_stats_base,
-    _possession_stats_pressure,
-    _possession_stats_progression,
-    _possession_stats_time,
-    _possession_directness_ratio,
-    _possession_movement_events,
-    add_possession_opponent,
 )
 
 
 LONG_PASS_M = 30
 ERA_2004 = "2003/2004"
 ERA_2016 = "2015/2016"
-ERA_A = ERA_2004
-ERA_B = ERA_2016
 
 EVENT_COLS = [
     # Core
