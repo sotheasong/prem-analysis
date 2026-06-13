@@ -503,6 +503,122 @@ def plot_pass_vs_carry_progression(
     return ax
 
 
+def plot_first_pass_recipient_roles(first_passes: pd.DataFrame, *, ax=None):
+    """Stacked first-pass recipient role distribution by team."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 4))
+
+    role_mix = (
+        first_passes.groupby("team")["recipient_role"]
+        .value_counts(normalize=True)
+        .unstack(fill_value=0)
+        * 100
+    )
+    role_order = [
+        "goalkeeper",
+        "center_back",
+        "fullback",
+        "central_midfield",
+        "wide_midfield",
+        "winger",
+        "attacking_midfield",
+        "forward",
+        "unknown",
+    ]
+    role_mix = role_mix.reindex(
+        columns=[role for role in role_order if role in role_mix.columns],
+        fill_value=0,
+    )
+    role_mix.plot(kind="bar", stacked=True, ax=ax, colormap="tab20", alpha=0.9)
+    ax.set_xlabel("Team")
+    ax.set_ylabel("First passes (%)")
+    ax.set_title("First pass recipient roles")
+    ax.legend(title="Recipient role", bbox_to_anchor=(1.02, 1), loc="upper left")
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
+    return ax
+
+
+def plot_buildup_width_depth(buildup_shape: pd.DataFrame, *, ax=None):
+    """Compare early endpoint width/depth spread in Regular Play buildups."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    plot_data = buildup_shape.set_index("team")[
+        ["early_width_y_std", "early_depth_x_std"]
+    ].rename(
+        columns={
+            "early_width_y_std": "Width spread (y std)",
+            "early_depth_x_std": "Depth spread (x std)",
+        }
+    )
+    plot_data.plot(kind="bar", ax=ax, alpha=0.9)
+    ax.set_xlabel("Team")
+    ax.set_ylabel("Average std, first 3 pass endpoints")
+    ax.set_title("Early buildup spread")
+    ax.legend(title="")
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
+    return ax
+
+
+def plot_buildup_shape_arrows(
+    sequence: pd.DataFrame,
+    teams: list[str],
+    *,
+    max_pass_number: int = 1,
+):
+    """Draw first pass or first-n-pass buildup arrows on separate pitches."""
+    fig, axes = plt.subplots(1, len(teams), figsize=(6 * len(teams), 4))
+    axes = np.atleast_1d(axes)
+    colors = _team_color_map(teams)
+
+    for ax, team in zip(axes, teams):
+        data = sequence[
+            sequence["team"].eq(team)
+            & sequence["pass_number_in_possession"].le(max_pass_number)
+        ].dropna(subset=["location_x", "location_y", "pass_end_x", "pass_end_y"])
+        _draw_pitch(ax)
+        for _, row in data.iterrows():
+            ax.arrow(
+                row["location_x"],
+                row["location_y"],
+                row["pass_end_x"] - row["location_x"],
+                row["pass_end_y"] - row["location_y"],
+                length_includes_head=True,
+                head_width=1.6,
+                head_length=2.2,
+                alpha=0.35,
+                color=colors.get(team),
+                linewidth=0.8,
+            )
+        ax.set_title(f"{team}: first {max_pass_number} buildup pass(es)")
+
+    fig.suptitle("Early Regular Play buildup arrows", y=1.03)
+    plt.tight_layout()
+    return fig, axes
+
+
+def plot_midfield_bypass_rates(buildup_shape: pd.DataFrame, *, ax=None):
+    """Compare midfield-bypass and defensive-to-advanced first-pass rates."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    plot_data = buildup_shape.set_index("team")[
+        ["first_pass_bypass_midfield_pct", "defensive_to_advanced_first_pass_pct"]
+    ].rename(
+        columns={
+            "first_pass_bypass_midfield_pct": "Defensive third -> beyond midfield",
+            "defensive_to_advanced_first_pass_pct": "Defensive role -> advanced role",
+        }
+    )
+    plot_data.plot(kind="bar", ax=ax, alpha=0.9)
+    ax.set_xlabel("Team")
+    ax.set_ylabel("First passes (%)")
+    ax.set_title("Midfield bypass behavior")
+    ax.legend(title="")
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
+    return ax
+
+
 def plot_entry_rates(possession_summary: pd.DataFrame, *, ax=None):
     """Plot final-third, box-entry, and shot-ending possession rates by team."""
     if ax is None:
@@ -731,6 +847,204 @@ def plot_player_location_heatmaps(
     fig.suptitle(f"Player touch locations (top {n}) — {season}", y=1.02)
     plt.tight_layout()
     return fig
+
+
+def plot_tempo_distribution(
+    rhythm_summary: pd.DataFrame,
+    teams: list[str],
+    *,
+    ax=None,
+):
+    """
+    Violin + box plot of per-possession median inter-event gap by team.
+
+    Lower gap = faster possession tempo.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    colors = _team_color_map(teams)
+    data = [
+        rhythm_summary.loc[
+            rhythm_summary["possession_team"] == t, "gap_median"
+        ].dropna().values
+        for t in teams
+    ]
+    parts = ax.violinplot(data, positions=range(len(teams)), showmedians=True, widths=0.6)
+    for i, (pc, team) in enumerate(zip(parts["bodies"], teams)):
+        pc.set_facecolor(colors.get(team))
+        pc.set_alpha(0.6)
+    for key in ("cmedians", "cmins", "cmaxes", "cbars"):
+        parts[key].set_color("white")
+        parts[key].set_linewidth(1.2)
+    ax.set_xticks(range(len(teams)))
+    ax.set_xticklabels(teams)
+    ax.set_ylabel("Median inter-event gap (sec)")
+    ax.set_title("Possession tempo distribution")
+    ax.grid(axis="y", alpha=0.3)
+    return ax
+
+
+def plot_rhythm_consistency(
+    rhythm_summary: pd.DataFrame,
+    teams: list[str],
+    *,
+    min_events: int = 4,
+    ax=None,
+):
+    """
+    Scatter: median gap (speed) vs gap coefficient of variation (consistency).
+
+    Each point is one possession.  Lower gap = faster; lower CV = more metronomic.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 5))
+
+    colors = _team_color_map(teams)
+    data = rhythm_summary[rhythm_summary["action_count"] >= min_events] if "action_count" in rhythm_summary.columns else rhythm_summary
+
+    for team in teams:
+        grp = data[data["possession_team"] == team].dropna(subset=["gap_median", "gap_cv"])
+        ax.scatter(
+            grp["gap_median"],
+            grp["gap_cv"],
+            alpha=0.55,
+            s=30,
+            label=team,
+            color=colors.get(team),
+            edgecolors="none",
+        )
+
+    ax.axvline(
+        rhythm_summary["gap_median"].median(),
+        color="0.4", lw=0.8, ls="--", label="Overall median gap",
+    )
+    ax.axhline(1.0, color="0.4", lw=0.8, ls=":", label="CV = 1 (irregular)")
+    ax.set_xlabel("Median inter-event gap (sec) — lower = faster")
+    ax.set_ylabel("Gap CV — lower = more consistent tempo")
+    ax.set_title("Possession tempo: speed vs consistency")
+    ax.legend(fontsize=8)
+    return ax
+
+
+def plot_intra_possession_tempo_profile(
+    intra_tempo: pd.DataFrame,
+    teams: list[str],
+    *,
+    max_position: int = 12,
+    min_obs: int = 5,
+    ax=None,
+):
+    """
+    Line chart of average inter-event gap by event position within the possession.
+
+    Position 1 = gap between own-team events 1 and 2, etc.
+    Only positions with ≥ min_obs observations are plotted.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(9, 4))
+
+    colors = _team_color_map(teams)
+
+    for team in teams:
+        grp = intra_tempo[
+            (intra_tempo["possession_team"] == team)
+            & (intra_tempo["event_position"] <= max_position)
+        ]
+        profile = (
+            grp.groupby("event_position")["gap_sec"]
+            .agg(["median", "count"])
+            .rename(columns={"median": "gap_median", "count": "n"})
+            .reset_index()
+        )
+        profile = profile[profile["n"] >= min_obs]
+        ax.plot(
+            profile["event_position"],
+            profile["gap_median"],
+            marker="o",
+            ms=5,
+            label=team,
+            color=colors.get(team),
+            lw=1.8,
+        )
+
+    ax.set_xlabel("Event position within possession")
+    ax.set_ylabel("Median gap to next event (sec)")
+    ax.set_title("How tempo changes through a possession chain")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    return ax
+
+
+def plot_circulation_vs_progression(
+    rhythm_summary: pd.DataFrame,
+    teams: list[str],
+    *,
+    ax=None,
+):
+    """
+    Scatter: passes before first progression vs total pass count.
+
+    Points on the diagonal = entire possession was circulation (no progression).
+    Points below = team progressed quickly relative to total passes.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 5))
+
+    colors = _team_color_map(teams)
+    data = rhythm_summary.dropna(subset=["pre_prog_pass_count", "pass_count"])
+
+    # diagonal reference
+    max_passes = int(data["pass_count"].max()) + 1
+    ax.plot([0, max_passes], [0, max_passes], color="0.5", lw=0.8, ls="--", zorder=0)
+
+    for team in teams:
+        grp = data[data["possession_team"] == team]
+        ax.scatter(
+            grp["pass_count"],
+            grp["pre_prog_pass_count"],
+            alpha=0.55,
+            s=35,
+            label=team,
+            color=colors.get(team),
+            edgecolors="none",
+        )
+
+    ax.set_xlabel("Total passes in possession")
+    ax.set_ylabel("Passes before first progressive action")
+    ax.set_title("Circulation before progression")
+    ax.legend()
+    return ax
+
+
+def plot_progression_efficiency(
+    rhythm_summary: pd.DataFrame,
+    teams: list[str],
+    *,
+    ax=None,
+):
+    """
+    Side-by-side bars: median passes per 10 m of net x-progression by team.
+
+    Lower = more efficient at converting passes into territory gained.
+    Only possessions that progressed forward (net_x_progression > 0) are included.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 4))
+
+    colors = _team_color_map(teams)
+    vals = []
+    for team in teams:
+        grp = rhythm_summary[
+            rhythm_summary["possession_team"] == team
+        ]["passes_per_10m"].dropna() if "passes_per_10m" in rhythm_summary.columns else pd.Series(dtype=float)
+        vals.append(float(grp.median()) if not grp.empty else np.nan)
+
+    ax.bar(teams, vals, color=[colors.get(t) for t in teams], alpha=0.85)
+    ax.set_ylabel("Passes per 10 m of net x-progression")
+    ax.set_title("Progression efficiency")
+    ax.grid(axis="y", alpha=0.3)
+    return ax
 
 
 def build_match_tempo(events: pd.DataFrame) -> pd.DataFrame:
