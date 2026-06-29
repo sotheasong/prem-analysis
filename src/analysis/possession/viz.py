@@ -386,18 +386,52 @@ def plot_pass_angle_rose(
     return fig, axes
 
 
+_POSITION_ABBR: dict[str, str] = {
+    "Goalkeeper": "GK",
+    "Right Back": "RB", "Left Back": "LB",
+    "Right Center Back": "RCB", "Center Back": "CB", "Left Center Back": "LCB",
+    "Right Wing Back": "RWB", "Left Wing Back": "LWB",
+    "Right Defensive Midfield": "RDM", "Center Defensive Midfield": "CDM", "Left Defensive Midfield": "LDM",
+    "Right Midfield": "RM", "Left Midfield": "LM",
+    "Right Center Midfield": "RCM", "Center Midfield": "CM", "Left Center Midfield": "LCM",
+    "Right Attacking Midfield": "RAM", "Center Attacking Midfield": "CAM", "Left Attacking Midfield": "LAM",
+    "Right Wing": "RW", "Left Wing": "LW",
+    "Right Center Forward": "RCF", "Center Forward": "CF", "Left Center Forward": "LCF",
+    "Striker": "ST", "Secondary Striker": "SS",
+}
+
+
+def _player_position_map(events: pd.DataFrame, team: str) -> dict[str, str]:
+    """Return {player_name: position_abbr} for a team using Starting XI data."""
+    from src.analysis.passing.passing import starting_lineup_table
+    lineup = starting_lineup_table(events)
+    team_lineup = lineup[lineup["team"].eq(team)]
+    return {
+        row["player"]: _POSITION_ABBR.get(row["position"], row["position"][:3].upper())
+        for _, row in team_lineup.iterrows()
+        if pd.notna(row.get("player")) and pd.notna(row.get("position"))
+    }
+
+
+def _label_with_position(name: str, pos_map: dict[str, str], max_name: int = 12) -> str:
+    last = str(name).split()[-1][:max_name]
+    abbr = pos_map.get(name)
+    return f"{last} ({abbr})" if abbr else last
+
+
 def plot_pass_network_heatmap(
     events: pd.DataFrame,
     team: str,
     *,
     play_pattern: str = "Regular Play",
+    show_positions: bool = True,
     ax=None,
 ):
     """Weighted player-to-player pass matrix for completed passes."""
     from src.analysis.passing.passing import filter_regular_play_passes, pass_network_adjacency
 
     if ax is None:
-        _, ax = plt.subplots(figsize=(7, 6))
+        _, ax = plt.subplots(figsize=(9, 8))
 
     passes = filter_regular_play_passes(events, team)
     if play_pattern != "Regular Play":
@@ -411,11 +445,14 @@ def plot_pass_network_heatmap(
         ax.set_title(f"No completed pass network — {team}")
         return ax
 
+    pos_map = _player_position_map(events, team) if show_positions else {}
+    labels = [_label_with_position(p, pos_map) for p in matrix.columns]
+
     im = ax.imshow(matrix.values, cmap="viridis")
     ax.set_xticks(range(len(matrix.columns)))
     ax.set_yticks(range(len(matrix.index)))
-    ax.set_xticklabels([str(p)[:14] for p in matrix.columns], rotation=90, fontsize=8)
-    ax.set_yticklabels([str(p)[:14] for p in matrix.index], fontsize=8)
+    ax.set_xticklabels(labels, rotation=90, fontsize=8)
+    ax.set_yticklabels(labels, fontsize=8)
     ax.set_title(f"Completed pass network — {team}")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Passes")
     return ax
@@ -560,41 +597,48 @@ def plot_buildup_width_depth(buildup_shape: pd.DataFrame, *, ax=None):
     return ax
 
 
-def plot_buildup_shape_arrows(
-    sequence: pd.DataFrame,
-    teams: list[str],
-    *,
-    max_pass_number: int = 1,
-):
-    """Draw first pass or first-n-pass buildup arrows on separate pitches."""
-    fig, axes = plt.subplots(1, len(teams), figsize=(6 * len(teams), 4))
-    axes = np.atleast_1d(axes)
-    colors = _team_color_map(teams)
+# def plot_buildup_shape_arrows(
+#     sequence: pd.DataFrame,
+#     team: str,
+#     *,
+#     max_pass_number: int = 1,
+# ):
+#     """Draw first pass or first-n-pass buildup arrows on separate pitches."""
+#     # fig, axes = plt.subplots(1, len(teams), figsize=(6 * len(teams), 4))
+#     pitch = Pitch(pitch_type="statsbomb", line_color="white", pitch_color="#1a1a2e")
+#     fig, ax = pitch.draw(figsize=(16, 11), constrained_layout=True, tight_layout=False)
+#     axes = np.atleast_1d(ax)
+#     colors = _team_color_map(team)
 
-    for ax, team in zip(axes, teams):
-        data = sequence[
-            sequence["team"].eq(team)
-            & sequence["pass_number_in_possession"].le(max_pass_number)
-        ].dropna(subset=["location_x", "location_y", "pass_end_x", "pass_end_y"])
-        _draw_pitch(ax)
-        for _, row in data.iterrows():
-            ax.arrow(
-                row["location_x"],
-                row["location_y"],
-                row["pass_end_x"] - row["location_x"],
-                row["pass_end_y"] - row["location_y"],
-                length_includes_head=True,
-                head_width=1.6,
-                head_length=2.2,
-                alpha=0.35,
-                color=colors.get(team),
-                linewidth=0.8,
-            )
-        ax.set_title(f"{team}: first {max_pass_number} buildup pass(es)")
+#     data = sequence[
+#         sequence["team"].eq(team)
+#         & sequence["pass_number_in_possession"].le(max_pass_number)
+#     ].dropna(subset=["location_x", "location_y", "pass_end_x", "pass_end_y"])
 
-    fig.suptitle("Early Regular Play buildup arrows", y=1.03)
-    plt.tight_layout()
-    return fig, axes
+#     for _, row in data.iterrows():
+#         pitch.arrows(
+#             row["location_x"],
+#             row["location_y"],
+#             row["pass_end_x"] - row["location_x"],
+#             row["pass_end_y"] - row["location_y"],
+#             width = 2,
+#             headwidth=1.6,
+#             headlength=2.2,
+#             color=colors.get(team)
+#         )
+#         # ax.arrow(
+#         #     r
+#         #     length_includes_head=True,
+#         #     h
+#         #     alpha=0.35,
+#         #     ,
+#         #     linewidth=0.8,
+#         # )
+#     ax.set_title(f"{team}: first {max_pass_number} buildup pass(es)")
+
+#     fig.suptitle("Early Regular Play buildup arrows", y=1.03)
+#     plt.tight_layout()
+#     return fig, axes
 
 
 def plot_midfield_bypass_rates(buildup_shape: pd.DataFrame, *, ax=None):
