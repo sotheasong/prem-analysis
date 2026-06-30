@@ -9,11 +9,29 @@ import numpy as np
 import pandas as pd
 from mplsoccer import Pitch
 
-from src.analysis.metrics import ERA_2004, ERA_2016, parse_pitch_x
+from src.utils.constants import ERA_2004, ERA_2016
 
 # StatsBomb open-data pitch (meters)
 PITCH_LENGTH = 120
 PITCH_WIDTH = 80
+
+
+def parse_pitch_x(value) -> float:
+    """Parse the x coordinate from a StatsBomb location string, e.g. "[61.4 43.6]"."""
+    if pd.isna(value):
+        return np.nan
+    s = str(value).strip("[]").strip()
+    if not s:
+        return np.nan
+    # StatsBomb CSV: "[61.4 43.6]" or "[60.2, 35.1]" or "[60.2,]"
+    if "," in s:
+        part = s.split(",")[0].strip()
+    else:
+        part = s.split()[0]
+    try:
+        return float(part)
+    except ValueError:
+        return np.nan
 
 VIZ_EXTRA_COLS = ["location_x", "location_y", "minute", "second", "player"]
 
@@ -306,7 +324,7 @@ def plot_pass_count_distribution(
     ax=None,
 ):
     """Side-by-side pass-count bins for regular-play possessions."""
-    from src.analysis.possession.compare import pass_count_distribution
+    from src.features.possession import pass_count_distribution
 
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 4))
@@ -403,7 +421,7 @@ _POSITION_ABBR: dict[str, str] = {
 
 def _player_position_map(events: pd.DataFrame, team: str) -> dict[str, str]:
     """Return {player_name: position_abbr} for a team using Starting XI data."""
-    from src.analysis.passing.passing import starting_lineup_table
+    from src.features.passing import starting_lineup_table
     lineup = starting_lineup_table(events)
     team_lineup = lineup[lineup["team"].eq(team)]
     return {
@@ -428,7 +446,7 @@ def plot_pass_network_heatmap(
     ax=None,
 ):
     """Weighted player-to-player pass matrix for completed passes."""
-    from src.analysis.passing.passing import filter_regular_play_passes, pass_network_adjacency
+    from src.features.passing import filter_regular_play_passes, pass_network_adjacency
 
     if ax is None:
         _, ax = plt.subplots(figsize=(9, 8))
