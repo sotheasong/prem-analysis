@@ -9,7 +9,8 @@ so that re-running the notebooks reproduces the same organized layout:
     ├── processed/    # cleaned, canonical event/match stores (events_*.parquet, matches_*.csv)
     ├── possessions/  # possession-chain & rhythm outputs
     ├── passing/      # passing-intent & passing-structure outputs
-    └── transitions/  # transition outputs
+    ├── transitions/  # transition outputs
+    └── features/     # scaled (match, team) style tables + season possession chains
 """
 
 from pathlib import Path
@@ -24,6 +25,7 @@ PROCESSED_DIR = DATA_DIR / "processed"
 POSSESSIONS_DIR = DATA_DIR / "possessions"
 PASSING_DIR = DATA_DIR / "passing"
 TRANSITIONS_DIR = DATA_DIR / "transitions"
+FEATURES_DIR = DATA_DIR / "features"
 
 # Output subdirectories — created on import so notebooks can write freely.
 DATA_SUBDIRS = (
@@ -32,6 +34,7 @@ DATA_SUBDIRS = (
     POSSESSIONS_DIR,
     PASSING_DIR,
     TRANSITIONS_DIR,
+    FEATURES_DIR,
 )
 
 for _d in DATA_SUBDIRS:

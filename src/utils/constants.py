@@ -13,6 +13,51 @@ LONG_PASS_M = 30
 ERA_2004 = "2003/2004"
 ERA_2016 = "2015/2016"
 
+# ---------------------------------------------------------------------------
+# Scaling phase — per-season dataset registry & opponent-strength lookups
+# ---------------------------------------------------------------------------
+
+# Final 2003/04 Premier League table: team -> (final_position, final_points).
+# The StatsBomb open data for this season is Arsenal-only, so opponent strength
+# cannot be derived from the local matches; this static historical table
+# supplies it. (For full-league seasons, standings are computed from the data.)
+FINAL_TABLE_2004 = {
+    "Arsenal":                 (1, 90),
+    "Chelsea":                 (2, 79),
+    "Manchester United":       (3, 75),
+    "Liverpool":               (4, 60),
+    "Newcastle United":        (5, 56),
+    "Aston Villa":             (6, 56),
+    "Charlton Athletic":       (7, 53),
+    "Bolton Wanderers":        (8, 53),
+    "Fulham":                  (9, 52),
+    "Birmingham City":         (10, 50),
+    "Middlesbrough":           (11, 48),
+    "Southampton":             (12, 47),
+    "Portsmouth":              (13, 45),
+    "Tottenham Hotspur":       (14, 45),
+    "Blackburn Rovers":        (15, 44),
+    "Manchester City":         (16, 41),
+    "Everton":                 (17, 39),
+    "Leicester City":          (18, 33),
+    "Leeds United":            (19, 33),
+    "Wolverhampton Wanderers": (20, 33),
+}
+
+# Per-season metadata used by the batch feature runner (src/features/batch.py).
+#   suffix   -> processed-file suffix: events_<suffix>.parquet / matches_<suffix>.csv
+#   coverage -> "full" (whole league) or "partial" (subset; not league-analyzable)
+#   strength -> static {team: (position, points)} when coverage is partial;
+#               None means compute real standings from the season's own matches.
+SEASONS = {
+    "2003/2004": {"suffix": "2004", "coverage": "partial", "strength": FINAL_TABLE_2004},
+    "2015/2016": {"suffix": "2016", "coverage": "full", "strength": None},
+}
+
+# Event columns carrying card info, and the values that count as a sending-off.
+CARD_COLS = ("foul_committed_card", "bad_behaviour_card")
+RED_CARD_VALUES = frozenset({"Red Card", "Second Yellow"})
+
 # Columns loaded from the processed event store for feature engineering.
 EVENT_COLS = [
     # Core
