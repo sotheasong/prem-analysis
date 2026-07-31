@@ -138,6 +138,35 @@ def match_context(match_row: pd.Series, team: str, strength: dict) -> dict:
     }
 
 
+_SCORE_STATES = ("leading", "level", "trailing")
+
+
+def score_state_shares(team_poss: pd.DataFrame) -> dict:
+    """Count- and duration-weighted share (%) of a team's possessions per state.
+
+    ``pct_poss_*`` weights each possession equally; ``pct_time_*`` weights by
+    ``clock_duration`` (share of the team's on-ball *time* in each state). The
+    trailing shares double as the "chasing" game-state covariate. Empty input
+    (a team with no possessions) yields NaNs, not spurious zeros.
+    """
+    out = {}
+    n = len(team_poss)
+    total_dur = team_poss["clock_duration"].sum() if n else 0
+    state = team_poss.get("score_state")
+    for s in _SCORE_STATES:
+        if n == 0 or state is None:
+            out[f"pct_poss_{s}"] = np.nan
+            out[f"pct_time_{s}"] = np.nan
+            continue
+        mask = state.eq(s)
+        out[f"pct_poss_{s}"] = mask.mean() * 100
+        out[f"pct_time_{s}"] = (
+            team_poss.loc[mask, "clock_duration"].sum() / total_dur * 100
+            if total_dur else np.nan
+        )
+    return out
+
+
 def count_red_cards(events_df: pd.DataFrame, team: str) -> tuple[int, int]:
     """(red_cards_for, red_cards_against) — reds are Red Card or Second Yellow."""
     present = [c for c in CARD_COLS if c in events_df.columns]
@@ -191,6 +220,7 @@ def build_match_team_style(
                 **match_context(match_row, team, strength),
                 "red_cards_for": reds_for,
                 "red_cards_against": reds_against,
+                **score_state_shares(filter_possessions(poss, team)),
                 **event_style.to_dict(),
                 **passing.to_dict(),
                 **poss_all.to_dict(),

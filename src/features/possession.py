@@ -421,6 +421,96 @@ def _parse_bool(value) -> bool:
 MERGE_COLS = ["match_id", "period", "possession_id", "possession_team"]
 
 
+# ---------------------------------------------------------------------------
+# Score-state (game state at the start of each possession)
+# ---------------------------------------------------------------------------
+def _goal_events(events_df: pd.DataFrame) -> pd.DataFrame:
+    """Goal-scoring moments, one row per goal, credited to the scoring team.
+
+    A team's tally increments on a ``Shot`` finished as a ``Goal`` or on an
+    ``Own Goal For`` (its mirror ``Own Goal Against`` is ignored to avoid
+    double counting). Each goal carries the ``possession`` it occurred in, so
+    goals can be ordered relative to possessions without timestamp matching.
+    Reconciles exactly with official final scores on both open-data seasons.
+    """
+    is_shot_goal = events_df["type"].eq("Shot")
+    if "shot_outcome" in events_df.columns:
+        is_shot_goal &= events_df["shot_outcome"].eq("Goal")
+    else:
+        is_shot_goal &= False
+    is_own_goal_for = events_df["type"].eq("Own Goal For")
+    goals = events_df.loc[
+        is_shot_goal | is_own_goal_for,
+        ["match_id", "period", "possession", "team"],
+    ]
+    return goals.dropna(subset=["team"])
+
+
+def compute_possession_score_state(events_df: pd.DataFrame) -> pd.DataFrame:
+    """Score-state at the *start* of every possession, from the owner's view.
+
+    Returns one row per ``(match_id, period, possession_id, possession_team)``
+    with ``score_diff_before`` (signed goal difference, possession_team minus
+    opponent) and ``score_state`` in ``{leading, level, trailing}``.
+
+    Definition: goals scored *within* a possession are that possession's
+    outcome, not its context, so a possession sees only goals from strictly
+    earlier possessions (ordered by ``period`` then ``possession``). The first
+    possession of every match is therefore ``level`` by construction, and the
+    restart possession after a goal correctly reflects the new scoreline.
+    """
+    goals = _goal_events(events_df)
+    # goals scored per (match, period, possession, scoring team)
+    goal_counts = (
+        goals.groupby(["match_id", "period", "possession", "team"])
+        .size()
+        .rename("goals")
+        .reset_index()
+    )
+
+    rows = []
+    owner = (
+        events_df.dropna(subset=["possession_team"])
+        .groupby(["match_id", "period", "possession"], sort=False)["possession_team"]
+        .first()
+        .reset_index()
+    )
+    goals_by_match = {
+        mid: grp for mid, grp in goal_counts.groupby("match_id")
+    }
+    for match_id, mposs in owner.groupby("match_id", sort=False):
+        mposs = mposs.sort_values(["period", "possession"])
+        teams = list(mposs["possession_team"].unique())
+        running = {t: 0 for t in teams}
+        mgoals = goals_by_match.get(match_id)
+        # (period, possession) -> {team: goals scored in it}
+        in_poss = {}
+        if mgoals is not None:
+            for _, g in mgoals.iterrows():
+                in_poss.setdefault((g["period"], g["possession"]), {})[g["team"]] = int(g["goals"])
+                running.setdefault(g["team"], 0)  # own-goal-for team may differ
+        for _, r in mposs.iterrows():
+            pt = r["possession_team"]
+            gf = running.get(pt, 0)
+            ga = sum(v for t, v in running.items() if t != pt)
+            diff = gf - ga
+            rows.append(
+                {
+                    "match_id": match_id,
+                    "period": r["period"],
+                    "possession_id": r["possession"],
+                    "possession_team": pt,
+                    "score_diff_before": diff,
+                    "score_state": (
+                        "leading" if diff > 0 else "trailing" if diff < 0 else "level"
+                    ),
+                }
+            )
+            for t, n in in_poss.get((r["period"], r["possession"]), {}).items():
+                running[t] = running.get(t, 0) + n
+    return pd.DataFrame(rows, columns=MERGE_COLS + ["score_diff_before", "score_state"])
+
+
 def build_possession_summary(events_df: pd.DataFrame) -> pd.DataFrame:
     """Merge possession-chain tables into one match-level summary."""
     base = add_possession_opponent(_possession_stats_base(events_df), events_df)
@@ -429,6 +519,7 @@ def build_possession_summary(events_df: pd.DataFrame) -> pd.DataFrame:
         .merge(_possession_stats_progression(events_df), on=MERGE_COLS, how="left")
         .merge(_possession_stats_pressure(events_df), on=MERGE_COLS, how="left")
         .merge(_possession_stats_outcome(events_df), on=MERGE_COLS, how="left")
+        .merge(compute_possession_score_state(events_df), on=MERGE_COLS, how="left")
     )
 
 """Team-level possession and event summaries for match comparisons."""
