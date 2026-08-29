@@ -20,7 +20,8 @@ notebooks/
 
 src/
   extraction/          # StatsBomb download + event normalization
-  features/            # possession.py, passing.py, transition.py
+  features/            # possession.py, passing.py, transition.py, batch.py
+  diagnostics/         # style.py — season style diagnostic (feature registry)
   visualization/       # possession.py, passing.py, transition.py
   utils/               # constants.py
   config.py            # all data paths; auto-creates the data/ subdirs on import

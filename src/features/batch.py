@@ -36,6 +36,53 @@ from src.features.possession import (
     summarize_team_events,
 )
 
+# ---------------------------------------------------------------------------
+# Column taxonomy of the style table
+# ---------------------------------------------------------------------------
+# ``build_match_team_style`` writes three kinds of column alongside the style
+# blocks. Naming them here, next to the code that creates them, is what lets
+# downstream analysis ask for "the engineered features" without maintaining its
+# own drop-list (see ``style_columns``).
+
+# Row identity and labels. Never predictors, never responses.
+KEY_COLS = frozenset({
+    "season", "match_id", "date", "match_week", "team", "team_id", "opponent",
+})
+
+# Exogenous covariates: fixed before kickoff, so they are safe as predictors.
+# ``home`` is the 0/1 encoding of ``venue`` that analysis code derives.
+CONTEXT_COLS = frozenset({
+    "venue", "home", "opp_final_points", "opp_final_position",
+})
+
+# Outcome-derived. Any of these leaks the result into a model of style, so they
+# are excluded from the feature universe by default. The score-state shares
+# belong here despite looking like style: they are a function of goals scored.
+OUTCOME_COLS = frozenset({
+    "goals_for", "goals_against", "goals", "result",
+    "red_cards_for", "red_cards_against",
+    "pct_poss_leading", "pct_time_leading",
+    "pct_poss_level", "pct_time_level",
+    "pct_poss_trailing", "pct_time_trailing",
+})
+
+NON_FEATURE_COLS = KEY_COLS | CONTEXT_COLS | OUTCOME_COLS
+
+
+def style_columns(df: pd.DataFrame) -> list[str]:
+    """The engineered style features of a ``match_team_style`` frame.
+
+    Every numeric column that is not a key, an exogenous covariate or an
+    outcome. Non-numeric style columns (``pi_top_player_name``, ``pi_top_edge``)
+    are excluded too: they label a match rather than measure it. Column order is
+    preserved.
+    """
+    return [
+        c for c in df.columns
+        if c not in NON_FEATURE_COLS and pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+
 # Count columns (from ``summarize_team_events``) reported as per-100-passes so
 # matches of different length/game-state are comparable.
 _COUNT_COLS_PER100 = (
