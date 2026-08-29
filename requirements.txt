@@ -8,3 +8,4 @@ dill
 duckdb
 mplsoccer
 networkx
+pytest
