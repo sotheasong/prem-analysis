@@ -9,6 +9,33 @@ from tqdm import tqdm
 
 from src.config import PROCESSED_DIR, RAW_DIR
 from src.extraction.events_format import is_normalized, normalize_events_df
+from src.utils.constants import SEASONS
+
+
+def season_plan(season: str, processed_dir: Path | str = PROCESSED_DIR) -> dict:
+    """What a season build fetches and where it writes, from the registry.
+
+    Deriving this rather than passing identifiers by hand is what stops a
+    season's events being written under another season's suffix, which would
+    silently replace a build. Raises ``KeyError`` for a season the registry
+    does not declare, before anything is fetched.
+    """
+    if season not in SEASONS:
+        raise KeyError(
+            f"{season!r} is not in the season registry. Declare it in "
+            f"src/utils/constants.py first; known: {sorted(SEASONS)}")
+    entry = SEASONS[season]
+    processed_dir = Path(processed_dir)
+    suffix = entry["suffix"]
+    return {
+        "season": season,
+        "competition_id": entry["competition_id"],
+        "season_id": entry["season_id"],
+        "suffix": suffix,
+        "coverage": entry["coverage"],
+        "events_path": processed_dir / f"events_{suffix}.parquet",
+        "matches_path": processed_dir / f"matches_{suffix}.csv",
+    }
 
 
 def get_epl_matches() -> pd.DataFrame:
@@ -266,6 +293,47 @@ def event_coverage_report(
     )
     coverage["missing_matches"] = coverage["matches"] - coverage["matches_with_events"]
     return coverage
+
+
+def extract_season(
+    season: str,
+    raw_dir: Path | str = RAW_DIR,
+    processed_dir: Path | str = PROCESSED_DIR,
+    *,
+    resume: bool = True,
+    verify_coverage: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch and persist one registry season: events parquet + matches csv.
+
+    The season-generic replacement for ``run_full_extraction``, which hard-codes
+    the Premier League. Resumable, because a full league is ~380 matches and a
+    dropped connection should not restart the download.
+
+    ``verify_coverage`` re-classifies the fetched match list and refuses to
+    continue if it disagrees with the registry. That check costs one request and
+    is what stops an hour being spent on a season that turns out to be one
+    club's fixture list, which is exactly the Bundesliga 2015/16 trap.
+    """
+    from src.extraction.catalog import classify_coverage
+
+    plan = season_plan(season, processed_dir)
+    matches = get_matches_formatted(plan["competition_id"], plan["season_id"])
+
+    if verify_coverage:
+        found = classify_coverage(matches.rename(columns={
+            "match_home_team": "home_team", "match_away_team": "away_team"}))
+        if found != plan["coverage"]:
+            raise ValueError(
+                f"{season}: registry declares coverage {plan['coverage']!r} but "
+                f"the fetched {len(matches)} matches classify as {found!r}. "
+                f"Fix the registry before building.")
+
+    extract_all_events(matches, raw_dir, resume=resume)
+    events = build_season_events(matches, plan["suffix"], raw_dir, processed_dir,
+                                 save=True)
+    matches.to_csv(plan["matches_path"], index=False)
+    print(f"Saved {len(matches):,} matches to {plan['matches_path']}")
+    return matches, events
 
 
 def run_full_extraction(raw_dir: Path | str = RAW_DIR, *, resume: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:

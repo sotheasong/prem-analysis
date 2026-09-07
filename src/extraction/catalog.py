@@ -80,6 +80,18 @@ def classify_coverage(matches: pd.DataFrame,
     return "sparse"
 
 
+def missing_fixtures(matches: pd.DataFrame) -> list[tuple[str, str]]:
+    """Fixtures a complete double round robin would hold but this season lacks.
+
+    "377 of 380" is not an answer on its own. Three gaps spread across the
+    season is a source omission; three involving one club would bend that
+    club's whole profile, and only the named pairs distinguish the two.
+    """
+    clubs = sorted(set(matches["home_team"]) | set(matches["away_team"]))
+    played = set(zip(matches["home_team"], matches["away_team"]))
+    return sorted({(h, a) for h in clubs for a in clubs if h != a} - played)
+
+
 def missing_event_types(events: pd.DataFrame,
                         required=REQUIRED_EVENT_TYPES) -> list[str]:
     """Required event types this collection does not carry.

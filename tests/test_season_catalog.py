@@ -14,7 +14,8 @@ verdict is derivable by hand from the construction and never from the code.
 import pandas as pd
 import pytest
 
-from src.extraction.catalog import audit, classify_coverage, summarize
+from src.extraction.catalog import (audit, classify_coverage,
+                                    missing_fixtures, summarize)
 
 
 def double_round_robin(n_teams: int) -> pd.DataFrame:
@@ -110,6 +111,23 @@ def test_summarize_reports_the_shape_that_produced_the_verdict():
     }
 
 
+def test_a_complete_schedule_is_missing_no_fixtures():
+    assert missing_fixtures(double_round_robin(20)) == []
+
+
+def test_the_absent_fixtures_are_named_not_just_counted():
+    """Ligue 1 2015/16 is 377 of 380, and "3 missing" is not an answer.
+
+    Knowing *which* three decides whether the season is safe to build: three
+    fixtures spread across the year is a source gap, three involving one club
+    would bias that club's whole profile.
+    """
+    full = double_round_robin(20)
+    dropped = [("T00", "T01"), ("T05", "T11"), ("T19", "T02")]
+    keep = ~full.set_index(["home_team", "away_team"]).index.isin(dropped)
+    assert missing_fixtures(full[keep]) == sorted(dropped)
+
+
 # --- integration: the classifier against the real catalogue ----------------
 # The synthetic fixtures above prove the arithmetic. This proves the arithmetic
 # lands on the right seasons, which is the claim Phase 3e actually rests on.
@@ -152,3 +170,26 @@ def test_audit_classifies_the_real_seasons_phase_3e_depends_on():
         assert result["coverage"] == expected, (
             f"{comp_name} {season_name}: expected {expected}, "
             f"got {result['coverage']} from {result}")
+
+
+def test_ligue_1_2015_16_loses_three_fixtures_and_no_club_twice():
+    """The gap that let Ligue 1 into Track 1.
+
+    377 of 380, and the three absences fall on six different clubs, one match
+    each out of 38. Every row the source does list is `available`, so these are
+    missing upstream rather than failed extraction. A club missing several
+    fixtures would have a bent season profile and would need excluding; one
+    missing fixture does not.
+    """
+    try:
+        from statsbombpy import sb
+        matches = sb.matches(competition_id=7, season_id=27)
+    except Exception:
+        pytest.skip("StatsBomb open data unreachable")
+
+    gaps = missing_fixtures(matches)
+    assert len(gaps) == 3, gaps
+
+    involved = [club for pair in gaps for club in pair]
+    assert len(set(involved)) == 6, f"a club appears twice: {involved}"
+    assert set(matches["match_status"]) == {"available"}
