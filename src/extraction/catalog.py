@@ -16,6 +16,24 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+# The event types src/features/ actually reads. Coverage is not usability: a
+# season can hold a full schedule and still lack a type the pipeline needs, and
+# an old collection is exactly where that happens. tests/test_event_types.py
+# reads the feature source and fails if this list drifts from it.
+REQUIRED_EVENT_TYPES = frozenset({
+    "Ball Recovery", "Block", "Carry", "Clearance", "Dispossessed", "Dribble",
+    "Duel", "Foul Committed", "Interception", "Miscontrol", "Own Goal For",
+    "Pass", "Pressure", "Shot", "Starting XI", "Tactical Shift",
+})
+
+
+# The subset a *single match* is expected to carry, so a sample can be judged
+# on it. Measured over 7 PL 2015/16 matches: these fourteen appeared in all
+# seven, while "Tactical Shift" appeared in five and "Own Goal For" in two.
+# Those two are real dependencies but occasional, so their absence from a
+# sample is uninformative rather than disqualifying.
+PER_MATCH_EVENT_TYPES = REQUIRED_EVENT_TYPES - {"Own Goal For", "Tactical Shift"}
+
 
 @dataclass(frozen=True)
 class CoveragePolicy:
@@ -62,6 +80,35 @@ def classify_coverage(matches: pd.DataFrame,
     return "sparse"
 
 
+def missing_event_types(events: pd.DataFrame,
+                        required=REQUIRED_EVENT_TYPES) -> list[str]:
+    """Required event types this collection does not carry.
+
+    Pass ``PER_MATCH_EVENT_TYPES`` when judging a sample rather than a season:
+    the occasional types cannot be ruled out from a handful of matches.
+    """
+    return sorted(set(required) - set(events["type"].unique()))
+
+
+def event_type_report(events: pd.DataFrame,
+                      required=REQUIRED_EVENT_TYPES) -> dict:
+    """What a sample of events carries, and how densely.
+
+    Density is reported, never failed on. A 2003/04 collection logging fewer
+    carries per match than a 2015/16 one is drift, which the contrast in
+    ``src/representation/era.py`` already removes. A *missing* type is the
+    thing that stops a build.
+    """
+    n_matches = int(events["match_id"].nunique())
+    counts = events["type"].value_counts()
+    return {
+        "n_matches": n_matches,
+        "n_events": len(events),
+        "density": {t: round(c / n_matches, 2) for t, c in counts.items()},
+        "missing": missing_event_types(events, required),
+    }
+
+
 def summarize(matches: pd.DataFrame,
               policy: CoveragePolicy = CoveragePolicy()) -> dict:
     """The verdict, plus the shape a reader needs to disagree with it."""
@@ -101,3 +148,25 @@ def audit(competition_id: int, season_id: int,
     result["competition_id"] = competition_id
     result["season_id"] = season_id
     return result
+
+
+def check_event_types(competition_id: int, season_id: int, sample_n: int = 5,
+                      required=PER_MATCH_EVENT_TYPES) -> dict:
+    """Sample a season's matches and report what event types they carry.
+
+    The sample is evenly spaced through the season in date order rather than
+    random, so a verdict is reproducible and a season that changed collection
+    mid-way cannot hide in one end of the fixture list.
+    """
+    from statsbombpy import sb
+    matches = sb.matches(competition_id=competition_id,
+                         season_id=season_id).sort_values("match_date")
+    step = max(1, len(matches) // sample_n)
+    match_ids = matches["match_id"].iloc[::step].tolist()[:sample_n]
+    events = pd.concat([sb.events(match_id=int(m)) for m in match_ids],
+                       ignore_index=True)
+    report = event_type_report(events, required)
+    report["competition_id"] = competition_id
+    report["season_id"] = season_id
+    report["sampled_match_ids"] = [int(m) for m in match_ids]
+    return report
