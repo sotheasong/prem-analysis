@@ -9,3 +9,4 @@ duckdb
 mplsoccer
 networkx
 pytest
+understatapi

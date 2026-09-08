@@ -98,3 +98,48 @@ def test_xg_aggregation_reproduces_the_per_shot_values_exactly():
                              how="left").fillna({"raw_xg": 0.0})
         worst = (merged["xg"] - merged["raw_xg"]).abs().max()
         assert worst < 1e-9, f"{suffix}: xG differs by up to {worst:.3e}"
+
+
+# --- an outside opinion on xG ----------------------------------------------
+
+def test_our_xg_agrees_with_an_independently_modelled_xg():
+    """INDEPENDENT. Understat fits its own xG model on its own event data, so
+    this is the one check in the phase where a second *model* gets a vote.
+
+    Agreement is bounded in what it proves. Two competent xG models correlate
+    around r = 0.9; that they do says neither is right. What it would catch is a
+    pipeline that had quietly stopped measuring chances at all.
+
+    The join tolerates a day, because late kickoffs land on different calendar
+    dates in the two sources. `goals_agree` is what makes that safe: if the
+    tolerance ever paired the wrong fixtures, the scorelines would stop matching.
+    """
+    pytest.importorskip("understatapi")
+    from scipy import stats
+
+    from src.validation.understat import UNDERSTAT_SEASONS, compare_xg
+    from src.config import FEATURES_DIR
+    from src.utils.constants import SEASONS
+
+    checked = 0
+    for season in UNDERSTAT_SEASONS:
+        suffix = SEASONS[season]["suffix"]
+        if not (FEATURES_DIR / f"match_team_style_{suffix}.csv").exists():
+            continue
+        try:
+            joined = compare_xg(season)
+        except Exception as exc:                      # network, or upstream shape
+            pytest.skip(f"Understat unavailable: {type(exc).__name__} {exc}")
+        checked += 1
+
+        assert joined["understat_xg"].notna().all(), (
+            f"{season}: {int(joined['understat_xg'].isna().sum())} matches "
+            f"found no Understat counterpart")
+        assert joined["goals_agree"].all(), (
+            f"{season}: the date-tolerant join paired mismatched fixtures")
+
+        r = stats.pearsonr(joined["xg"], joined["understat_xg"])[0]
+        assert r >= 0.85, f"{season}: xG correlation is only {r:.3f}"
+
+    if checked == 0:
+        pytest.skip("no Understat-covered seasons built")
