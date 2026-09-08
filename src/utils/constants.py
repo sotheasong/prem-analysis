@@ -236,6 +236,116 @@ LA_LIGA_TABLES = {
     },
 }
 
+
+# Official final tables, for the reconciliation gate in
+# src/extraction/reconcile.py. Independent of this pipeline in a way no
+# StatsBomb-derived statistic can be: a league table falls out of the results
+# and nothing here influenced it.
+#
+# Club names are StatsBomb's spelling. Every league needed its own aliases and
+# they are not guessable: Internazionale is "Inter Milan", Milan is "AC Milan",
+# Marseille is "Olympique de Marseille", Bournemouth is "AFC Bournemouth".
+# tests/test_reconciliation.py checks all thirteen seasons resolve.
+_OFFICIAL_2015_16 = {
+    "2015/2016": {
+        "Leicester City":              ( 1, 81),
+        "Arsenal":                     ( 2, 71),
+        "Tottenham Hotspur":           ( 3, 70),
+        "Manchester City":             ( 4, 66),
+        "Manchester United":           ( 5, 66),
+        "Southampton":                 ( 6, 63),
+        "West Ham United":             ( 7, 62),
+        "Liverpool":                   ( 8, 60),
+        "Stoke City":                  ( 9, 51),
+        "Chelsea":                     (10, 50),
+        "Everton":                     (11, 47),
+        "Swansea City":                (12, 47),
+        "Watford":                     (13, 45),
+        "West Bromwich Albion":        (14, 43),
+        "Crystal Palace":              (15, 42),
+        "AFC Bournemouth":             (16, 42),
+        "Sunderland":                  (17, 39),
+        "Newcastle United":            (18, 37),
+        "Norwich City":                (19, 34),
+        "Aston Villa":                 (20, 17),
+    },
+    "La Liga 2015/2016": {
+        "Barcelona":                   ( 1, 91),
+        "Real Madrid":                 ( 2, 90),
+        "Atlético Madrid":             ( 3, 88),
+        "Villarreal":                  ( 4, 64),
+        "Athletic Club":               ( 5, 62),
+        "Celta Vigo":                  ( 6, 60),
+        "Sevilla":                     ( 7, 52),
+        "Málaga":                      ( 8, 48),
+        "Real Sociedad":               ( 9, 48),
+        "Real Betis":                  (10, 45),
+        "Las Palmas":                  (11, 44),
+        "Valencia":                    (12, 44),
+        "Espanyol":                    (13, 43),
+        "Eibar":                       (14, 43),
+        "RC Deportivo La Coruña":      (15, 42),
+        "Granada":                     (16, 39),
+        "Sporting Gijón":              (17, 39),
+        "Rayo Vallecano":              (18, 38),
+        "Getafe":                      (19, 36),
+        "Levante UD":                  (20, 32),
+    },
+    "Serie A 2015/2016": {
+        "Juventus":                    ( 1, 91),
+        "Napoli":                      ( 2, 82),
+        "AS Roma":                     ( 3, 80),
+        "Inter Milan":                 ( 4, 67),
+        "Fiorentina":                  ( 5, 64),
+        "Sassuolo":                    ( 6, 61),
+        "AC Milan":                    ( 7, 57),
+        "Lazio":                       ( 8, 54),
+        "Chievo":                      ( 9, 50),
+        "Empoli":                      (10, 46),
+        "Genoa":                       (11, 46),
+        "Torino":                      (12, 45),
+        "Atalanta":                    (13, 45),
+        "Bologna":                     (14, 42),
+        "Sampdoria":                   (15, 40),
+        "Palermo":                     (16, 39),
+        "Udinese":                     (17, 39),
+        "Carpi":                       (18, 38),
+        "Frosinone":                   (19, 31),
+        "Hellas Verona":               (20, 28),
+    },
+    "Ligue 1 2015/2016": {
+        "Paris Saint-Germain":         ( 1, 96),
+        "Lyon":                        ( 2, 65),
+        "AS Monaco":                   ( 3, 65),
+        "OGC Nice":                    ( 4, 63),
+        "Lille":                       ( 5, 60),
+        "Saint-Étienne":               ( 6, 58),
+        "Stade Malherbe Caen":         ( 7, 54),
+        "Rennes":                      ( 8, 52),
+        "Angers":                      ( 9, 50),
+        "Bastia":                      (10, 50),
+        "Bordeaux":                    (11, 50),
+        "Montpellier":                 (12, 49),
+        "Olympique de Marseille":      (13, 48),
+        "Nantes":                      (14, 48),
+        "Lorient":                     (15, 46),
+        "Guingamp":                    (16, 44),
+        "Toulouse":                    (17, 40),
+        "Stade de Reims":              (18, 39),
+        "Gazélec Ajaccio":             (19, 37),
+        "Troyes":                      (20, 18),
+    },
+}
+
+# One table per registry season, so the gate needs a single lookup. The
+# Barcelona seasons and 2003/04 reuse the tables already defined above, which
+# also serve as their opponent-strength source.
+OFFICIAL_TABLES = {
+    "2003/2004": FINAL_TABLE_2004,
+    **_OFFICIAL_2015_16,
+    **{f"Barcelona {season}": table for season, table in LA_LIGA_TABLES.items()},
+}
+
 # Per-season metadata used by the batch feature runner (src/features/batch.py).
 # The registry is the single place a season is declared; everything downstream
 # reads it rather than hard-coding a season's properties.
