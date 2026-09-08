@@ -362,8 +362,21 @@ OFFICIAL_TABLES = {
 #            Which collection effort produced the season. Phase 3d established
 #            that drift is a property of the collection, not the year: seasons
 #            sharing a pass are comparable raw, across passes the paired contrast
-#            in src/representation/era.py is mandatory. The values below are the
-#            current hypothesis; ticket 09 of Phase 3e measures them.
+#            in src/representation/era.py is mandatory.
+#            MEASURED 2026-09-06 (src/validation/collection.py, S9):
+#              - retrospective_2003_04 is confirmed distinct. Arsenal's opponents
+#                log 108.0 possessions a match against ~95-100 for every 2015/16
+#                league, and the confound runs against the finding rather than
+#                for it, so it is conservative.
+#              - messi_la_liga is NOT shown to be distinct. Its apparent 14
+#                possession gap is smaller than the 16 possession effect of
+#                facing Barcelona, measured inside a single pass. It is kept
+#                separate as the safe default: wrongly assuming "different"
+#                costs a contrast that was not needed, wrongly assuming "same"
+#                lets a 3d-style artifact through.
+#              - the four big5_2015_16 leagues agree within ~5%, far tighter
+#                than the 2003/04 gap, but no club plays in two of them, so
+#                this measure cannot separate the residual from league style.
 #   role     "field" for a season contributing distinct clubs to fit on, "series"
 #            for repeated measures of one club, which Phase 4 projects into a
 #            fitted field and never fits on. See the Phase 3e sampling
